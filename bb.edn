@@ -1,0 +1,5 @@
+{:paths ["src-bb"]
+ :tasks
+ {clj:compile tasks/compile-native
+  clj:make-graal tasks/make-graal
+  c:make tasks/c-make}}

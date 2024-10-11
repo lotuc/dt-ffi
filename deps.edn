@@ -1,0 +1,14 @@
+{:paths ["src" "target/generated-classes"]
+ :deps {org.babashka/sci {:local/root "sci"}
+        cheshire/cheshire {:mvn/version "5.10.0"}
+        cnuernber/dtype-next {:mvn/version "10.116"}
+        org.clojure/clojure {:mvn/version "1.10.3"}}
+ :aliases
+ {:dev {:jvm-opts ["-Dclojure.compiler.direct-linking=true"
+                   "-Dclojure.spec.skip-macros=true"
+                   "--enable-native-access=ALL-UNNAMED"]}
+  :build {:deps {io.github.clojure/tools.build {:mvn/version "0.10.5"}}
+          :jvm-opts ["-Dclojure.compiler.direct-linking=true"
+                     "-Dclojure.spec.skip-macros=true"]
+          :ns-default build}
+  :make-graal {:exec-fn a.make-graal/make-bindings}}}
