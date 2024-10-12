@@ -1,60 +1,50 @@
 (ns a.lib-lua
+  {:clj-kondo/ignore [:unresolved-symbol]}
+  (:refer-clojure :exclude [remove printf])
   (:require
+   [clojure.string :as string]
+   [com.phronemophobic.clong.clang :as clang]
+   [com.phronemophobic.clong.gen.dtype-next :as gen.dtype-next]
    [tech.v3.datatype.ffi :as dt-ffi]))
 
-(declare
- lua_tolstring lua_close lua_settop lua_pcallk luaL_openlibs
- luaL_newstate luaL_loadbufferx)
+(defonce lua-api (clang/easy-api "/usr/local/include/lua/lua.h"))
+(defonce lauxlib-api (clang/easy-api "/usr/local/include/lua/lauxlib.h"))
+(defonce lualib-api  (clang/easy-api "/usr/local/include/lua/lualib.h"))
 
 (defmacro check-error
   [_fn-data & body]
   `(let [retval# (do ~@body)]
      retval#))
 
-(def lua-fn-defs
-  {:lua_pcallk {:rettype :int32
-                :argtypes [['L :pointer]
-                           ['nargs :int32]
-                           ['nresults :int32]
-                           ['errfunc :int32]
-                           ['ctx :int32]
-                           ['k :pointer?]]}
-   :lua_tolstring {:rettype :pointer
-                   :argtypes [['L :pointer]
-                              ['idx :int32]
-                              ['len :pointer?]]}
-   :lua_close {:rettype :void
-               :argtypes [['L :pointer]]}
-   :lua_settop
-   {:rettype :void
-    :argtypes [['L :pointer]
-               ['idx :int32]]}})
+(defn- lua-api->fn-defs [clong-api]
+  (let [f gen.dtype-next/coffi-type->dtype]
+    (with-redefs [gen.dtype-next/coffi-type->dtype
+                  (fn [t]
+                    (if (and (vector? t)
+                             (= [:coffi.mem/array :clong/__va_list_tag]
+                                [(first t) (second t)]))
+                      :pointer?
+                      (f t)))]
+      (->> (:functions clong-api)
+           (filter #(string/starts-with? (:symbol %) "lua"))
+           (map gen.dtype-next/clong-fn->dt-type-fn)
+           (reduce merge)))))
 
-(def lualib-fn-defs
-  {:luaL_openlibs {:rettype :void
-                   :argtypes [['L :pointer]]}})
+(def lua-fn-defs (lua-api->fn-defs lua-api))
+(def lualib-fn-defs (lua-api->fn-defs lualib-api))
+(def lauxlib-fn-defs (lua-api->fn-defs lauxlib-api))
+(def fn-defs (merge lua-fn-defs lualib-fn-defs lauxlib-fn-defs))
 
-(def lauxlib-fn-defs
-  {:luaL_newstate {:rettype :pointer}
-   :luaL_loadbufferx {:rettype :int32
-                      :argtypes [['L :pointer]
-                                 ['buff :pointer]         ; const char*
-                                 ['sz :size-t]
-                                 ['name :pointer]         ; const char*
-                                 ['mode :pointer?]        ; const char*
-                                 ]}})
-
-(def fn-defs (merge lua-fn-defs
-                    lualib-fn-defs
-                    lauxlib-fn-defs))
-
-(def lib (dt-ffi/library-singleton #'fn-defs))
-(dt-ffi/library-singleton-reset! lib)
-
+;;; (dt-ffi/define-library! lib fn-defs nil check-error)
+(def lib-fns fn-defs)
+(def lib-symbols nil)
+(defonce lib
+  (dt-ffi/library-singleton #'lib-fns #'lib-symbols nil))
 (dt-ffi/define-library-functions
-  fn-defs
+  lib-fns
   #(dt-ffi/library-singleton-find-fn lib %)
   check-error)
+(dt-ffi/library-singleton-reset! lib)
 
 (defn luaL_loadbuffer [L buff sz name]
   (luaL_loadbufferx L buff sz name nil))
